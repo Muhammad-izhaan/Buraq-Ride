@@ -1,0 +1,431 @@
+<html>
+<head>
+    <title>SwiftRide</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+        #map {
+            height: 400px;
+            width: 100%;
+        }
+        .menu {
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+        }
+        .menu.open {
+            transform: translateX(0);
+        }
+        .suggestions {
+            position: absolute;
+            background: #2d3748; /* bg-gray-800 */
+            border: 1px solid #ccc;
+            width: 100%;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .suggestion-item {
+            padding: 8px;
+            cursor: pointer;
+            color: #ecc94b; /* text-yellow-500 */
+        }
+        .suggestion-item:hover {
+            background: #4a5568; /* bg-gray-700 */
+        }
+        .detecting-location {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+        .fare-info {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: #333;
+            color: white;
+            padding: 20px;
+            border-radius: 10px 10px 0 0;
+            transform: translateY(100%);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+        }
+        .fare-info.open {
+            transform: translateY(0);
+        }
+        .confirm-ride {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .waiting-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            overflow: hidden;
+        }
+        .waiting-animation::before {
+            content: '';
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            background: rgba(0, 255, 0, 0.5);
+            border-radius: 50%;
+            animation: wave 1.5s infinite;
+        }
+        .waiting-animation::after {
+            content: '';
+            position: absolute;
+            width: 200px;
+            height: 200px;
+            background: rgba(0, 255, 0, 0.3);
+            border-radius: 50%;
+            animation: wave 1.5s infinite 0.5s;
+        }
+        @keyframes wave {
+            0% {
+                transform: scale(0);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(1);
+                opacity: 0;
+            }
+        }
+        .waiting-text {
+            position: absolute;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .menu ul li {
+            margin-bottom: 20px;
+            font-size: 20px;
+            border-bottom: 2px solid #d4af37; /* golden color */
+            padding-bottom: 10px;
+        }
+        .founder-info {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 12px;
+            color: #d4af37; /* golden color */
+        }
+        .small-text {
+            font-size: 12px;
+        }
+        .ride-accepted {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: #333;
+            color: white;
+            padding: 20px;
+            border-radius: 10px 10px 0 0;
+            transform: translateY(100%);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+        }
+        .ride-accepted.open {
+            transform: translateY(0);
+        }
+        .ride-accepted img {
+            border-radius: 50%;
+            width: 100px;
+            height: 100px;
+            display: block;
+            margin: 0 auto;
+        }
+        .ride-accepted .driver-info {
+            margin-top: 10px;
+            text-align: center;
+        }
+        .ride-accepted .driver-info p {
+            margin: 5px 0;
+        }
+        .ride-accepted .actions {
+            margin-top: 10px;
+            display: flex;
+            justify-content: space-around;
+        }
+        .ride-accepted .actions button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .ride-accepted .actions .cancel {
+            background: #f44336; /* red color */
+        }
+    </style>
+</head>
+<body class="bg-gray-800 h-full">
+    <div class="bg-yellow-500 text-center py-4">
+        <div class="flex justify-between items-center px-4">
+            <div class="text-3xl text-black cursor-pointer" id="menu-toggle">
+                <i class="fas fa-bars"></i>
+            </div>
+            <div class="text-black text-xl font-bold mx-auto">
+                SwiftRide
+            </div>
+        </div>
+    </div>
+    <div class="bg-gray-900 p-4">
+        <div class="bg-white rounded-lg overflow-hidden relative">
+            <div id="map"></div>
+            <div id="detecting-location" class="detecting-location">Detecting location...</div>
+        </div>
+    </div>
+    <div class="bg-gray-900 p-4 relative h-full">
+        <div class="text-yellow-500 small-text mb-2">You can enter the place name or choose from the map directly</div>
+        <div class="bg-gray-800 text-yellow-500 text-lg p-4 rounded-lg border border-yellow-500 relative">
+            <input type="text" id="location-input" placeholder="Where do you want to go today?" class="bg-gray-800 text-yellow-500 w-full outline-none">
+            <div id="suggestions" class="suggestions hidden"></div>
+        </div>
+    </div>
+    <div class="fixed top-0 left-0 h-full w-1/2 bg-gray-800 text-white p-4 menu" id="side-menu">
+        <ul>
+            <li class="mb-2"><a href="#" class="text-yellow-500">Home</a></li>
+            <li class="mb-2"><a href="#" class="text-yellow-500">About</a></li>
+            <li class="mb-2"><a href="#" class="text-yellow-500">Contact</a></li>
+            <li class="mb-2"><a href="#" class="text-yellow-500">Apply as a Rider</a></li>
+        </ul>
+        <div class="founder-info">Founder and Developer: Izhan</div>
+    </div>
+    <div class="fare-info" id="fare-info">
+        <div id="fare-details"></div>
+        <div class="confirm-ride" id="confirm-ride">Confirm Ride</div>
+    </div>
+    <div class="waiting-animation hidden" id="waiting-animation">
+        <div class="waiting-text">Searching for nearby riders...</div>
+    </div>
+    <div class="ride-accepted" id="ride-accepted">
+        <img src="https://via.placeholder.com/100" alt="Driver Profile Picture">
+        <div class="driver-info">
+            <p><strong>Driver:</strong> John Doe</p>
+            <p><strong>Registration Number:</strong> ABC1234</p>
+        </div>
+        <div class="actions">
+            <button onclick="callDriver()"><i class="fas fa-phone"></i> Call</button>
+            <button onclick="textDriver()"><i class="fas fa-sms"></i> Text</button>
+            <button class="cancel" onclick="cancelRide()">Cancel</button>
+        </div>
+    </div>
+    
+    <div class="text-center small-text text-yellow-500 mt-4">© 2023 SwiftRide. All rights reserved.</div>
+    <script>
+        var map = L.map('map').setView([20.5937, 78.9629], 5); // Default view of India
+        var userMarker;
+        var selectedMarker;
+        var routingControl;
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        document.getElementById('menu-toggle').addEventListener('click', function() {
+            document.getElementById('side-menu').classList.toggle('open');
+        });
+
+        document.addEventListener('click', function(event) {
+            var isClickInsideMenu = document.getElementById('side-menu').contains(event.target);
+            var isClickInsideToggle = document.getElementById('menu-toggle').contains(event.target);
+
+            if (!isClickInsideMenu && !isClickInsideToggle) {
+                document.getElementById('side-menu').classList.remove('open');
+            }
+        });
+
+        document.getElementById('location-input').addEventListener('input', function() {
+            var query = this.value;
+            var suggestions = document.getElementById('suggestions');
+            suggestions.innerHTML = '<div class="suggestion-item">Searching...</div>';
+            suggestions.classList.remove('hidden');
+
+            if (query.length > 0) {
+                fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&countrycodes=in`)
+                    .then(response => response.json())
+                    .then(data => {
+                        suggestions.innerHTML = '';
+                        if (data.length > 0) {
+                            data.forEach(function(item, index) {
+                                var div = document.createElement('div');
+                                div.className = 'suggestion-item';
+                                div.textContent = item.display_name;
+                                div.addEventListener('click', function() {
+                                    if (selectedMarker) {
+                                        map.removeLayer(selectedMarker);
+                                    }
+                                    if (routingControl) {
+                                        map.removeControl(routingControl);
+                                    }
+                                    selectedMarker = L.marker([item.lat, item.lon]).addTo(map)
+                                        .bindPopup(`<div>${item.display_name}<br><button onclick="removeMarker()">Remove</button></div>`)
+                                        .openPopup();
+                                    routingControl = L.Routing.control({
+                                        waypoints: [
+                                            L.latLng(userMarker.getLatLng().lat, userMarker.getLatLng().lng),
+                                            L.latLng(item.lat, item.lon)
+                                        ],
+                                        routeWhileDragging: true,
+                                        createMarker: function() { return null; },
+                                        lineOptions: {
+                                            styles: [{color: 'green', opacity: 1, weight: 5}]
+                                        },
+                                        show: false
+                                    }).addTo(map);
+                                    routingControl.on('routesfound', function(e) {
+                                        var routes = e.routes;
+                                        var summary = routes[0].summary;
+                                        var distance = summary.totalDistance / 1000;
+                                        var fare = distance * 25;
+                                        document.getElementById('fare-details').innerHTML = `Selected Location: ${item.display_name}<br>Estimated Fare: ₹${fare.toFixed(2)}`;
+                                        document.getElementById('fare-info').classList.add('open');
+                                    });
+                                    map.setView([item.lat, item.lon], 13);
+                                    suggestions.classList.add('hidden');
+                                });
+                                suggestions.appendChild(div);
+                            });
+                            if (data.length === 1) {
+                                suggestions.style.top = 'auto';
+                            } else {
+                                suggestions.style.top = '-200px';
+                            }
+                        } else {
+                            suggestions.innerHTML = '<div class="suggestion-item">No results found</div>';
+                        }
+                    });
+            } else {
+                suggestions.classList.add('hidden');
+            }
+        });
+
+        document.addEventListener('click', function(event) {
+            if (!document.getElementById('location-input').contains(event.target)) {
+                document.getElementById('suggestions').classList.add('hidden');
+            }
+            if (selectedMarker && !document.querySelector('.leaflet-popup').contains(event.target)) {
+                map.closePopup();
+            }
+        });
+
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(function(position) {
+                var lat = position.coords.latitude;
+                var lon = position.coords.longitude;
+                map.setView([lat, lon], 13);
+                userMarker = L.marker([lat, lon]).addTo(map)
+                    .bindPopup('Your Location')
+                    .openPopup();
+                document.getElementById('detecting-location').style.display = 'none';
+            }, function() {
+                alert("Geolocation is not supported by this browser.");
+            });
+        } else {
+            alert("Geolocation is not supported by this browser.");
+        }
+
+        map.on('click', function(e) {
+            if (selectedMarker) {
+                map.removeLayer(selectedMarker);
+            }
+            if (routingControl) {
+                map.removeControl(routingControl);
+            }
+            selectedMarker = L.marker(e.latlng).addTo(map)
+                .bindPopup(`<div>Selected Location<br><button onclick="removeMarker()">Remove</button></div>`)
+                .openPopup();
+            routingControl = L.Routing.control({
+                waypoints: [
+                    L.latLng(userMarker.getLatLng().lat, userMarker.getLatLng().lng),
+                    L.latLng(e.latlng.lat, e.latlng.lng)
+                ],
+                routeWhileDragging: true,
+                createMarker: function() { return null; },
+                lineOptions: {
+                    styles: [{color: 'green', opacity: 1, weight: 5}]
+                },
+                show: false
+            }).addTo(map);
+            routingControl.on('routesfound', function(e) {
+                var routes = e.routes;
+                var summary = routes[0].summary;
+                var distance = summary.totalDistance / 1000;
+                var fare = distance * 25;
+                document.getElementById('fare-details').innerHTML = `Selected Location: ${e.waypoints[1].latLng.lat}, ${e.waypoints[1].latLng.lng}<br>Estimated Fare: ₹${fare.toFixed(2)}`;
+                document.getElementById('fare-info').classList.add('open');
+                document.getElementById('location-input').value = `${e.waypoints[1].latLng.lat}, ${e.waypoints[1].latLng.lng}`;
+            });
+        });
+
+        function removeMarker() {
+            if (selectedMarker) {
+                map.removeLayer(selectedMarker);
+                selectedMarker = null;
+                if (routingControl) {
+                    map.removeControl(routingControl);
+                }
+                document.getElementById('fare-info').classList.remove('open');
+                document.getElementById('location-input').value = '';
+            }
+        }
+
+        document.getElementById('confirm-ride').addEventListener('click', function() {
+            document.getElementById('waiting-animation').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+            setTimeout(function() {
+                document.getElementById('waiting-animation').classList.add('hidden');
+                document.getElementById('fare-info').classList.remove('open');
+                document.getElementById('ride-accepted').classList.add('open');
+            }, 5000);
+        });
+
+        function callDriver() {
+            window.location.href = 'tel:1234567890';
+        }
+
+        function textDriver() {
+            alert('Texting driver...');
+        }
+
+        function cancelRide() {
+            document.getElementById('ride-accepted').classList.remove('open');
+            removeMarker();
+        }
+    </script>
+</body>
+</html>
